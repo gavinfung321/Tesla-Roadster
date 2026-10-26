@@ -68,12 +68,112 @@ new RGBELoader().load('assets/roadster-studio-v2.hdr',hdr=>{environment=pmrem.fr
 new GLTFLoader().load('assets/roadster.glb',gltf=>{
  const car=gltf.scene;
 
-const bounds=new THREE.Box3().setFromObject(car),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());car.position.sub(center);const wrapper=new THREE.Group();wrapper.add(car);const scale=4.6/Math.max(size.x,size.z);wrapper.scale.setScalar(scale);carCentreZ=-center.z*scale;wrapper.position.y=size.y*scale/2+.015;
- car.traverse(o=>{if(!o.isMesh)return;o.layers.enable(1);if(/tyre/i.test(o.name))o.layers.set(2);o.castShadow=true;o.receiveShadow=true;const tune=m=>{if(/tyre/i.test(o.name))return new THREE.MeshBasicMaterial({color:0x30343b,side:THREE.DoubleSide,toneMapped:false});if(m.map){const paint=new THREE.MeshPhysicalMaterial({map:m.map,color:0xc9cdd1,roughness:.3,metalness:.55,clearcoat:.65,clearcoatRoughness:.17,side:m.side});paint.normalMap=null;paint.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nfloat paintMask = smoothstep(0.14, 0.5, dot(diffuseColor.rgb, vec3(0.2126,0.7152,0.0722)));\nroughnessFactor = mix(0.19, 0.32, paintMask);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor = mix(0.05, 0.62, paintMask);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};return paint}const copy=m.clone();copy.normalMap=null;if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
+// Locally relax tiny roof-edge ridges along their surface normal, then blend shading.
+ // Displacement is capped; wheels, body panels and glass outline are preserved.
+ car.traverse(mesh=>{
+  if(!mesh.isMesh||!/Meshy.body/i.test(mesh.name))return;
+  const geo=mesh.geometry,pos=geo.attributes.position,norm=geo.attributes.normal;if(!norm)return;
+  const cell=.028,buckets=new Map(),selected=[];
+  for(let i=0;i<pos.count;i++){
+   const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+   if(x<-.65||y<.075||Math.abs(z)>.34)continue;
+   const a=Math.floor(x/cell),b=Math.floor(y/cell),c=Math.floor(z/cell),key=a+','+b+','+c;
+   if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(i);selected.push(i);
+  }
+  const output=new Float32Array(norm.array),relaxed=new Float32Array(pos.array);
+  for(const i of selected){
+   const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i),a=Math.floor(x/cell),b=Math.floor(y/cell),c=Math.floor(z/cell);
+   const n=new THREE.Vector3(),centroid=new THREE.Vector3(),original=new THREE.Vector3().fromBufferAttribute(norm,i);let weight=0;
+   for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){
+    for(const j of buckets.get((a+dx)+','+(b+dy)+','+(c+dz))||[]){
+     const distance=(pos.getX(j)-x)**2+(pos.getY(j)-y)**2+(pos.getZ(j)-z)**2;
+     if(distance>.0016)continue;
+     const v=new THREE.Vector3().fromBufferAttribute(norm,j);if(v.dot(original)<.45)continue;
+     const w=Math.exp(-distance/.00045);n.addScaledVector(v,w);centroid.addScaledVector(new THREE.Vector3().fromBufferAttribute(pos,j),w);weight+=w;
+    }
+   }
+   if(weight){
+    n.normalize();original.lerp(n,.95).normalize();output.set(original.toArray(),i*3);
+    // Only the narrow roof shoulder strips receive geometric relaxation.
+    const edgeWeight=THREE.MathUtils.smoothstep(Math.abs(z),.12,.18)*(1-THREE.MathUtils.smoothstep(Math.abs(z),.29,.34));
+    const endWeight=THREE.MathUtils.smoothstep(x,-.65,-.48)*(1-THREE.MathUtils.smoothstep(x,.70,.79));
+    centroid.multiplyScalar(1/weight).sub(new THREE.Vector3(x,y,z));
+    const move=THREE.MathUtils.clamp(centroid.dot(n)*.8,-.0025,.0025)*edgeWeight*endWeight;
+    relaxed[i*3]=x+n.x*move;relaxed[i*3+1]=y+n.y*move;relaxed[i*3+2]=z+n.z*move;
+   }
+  }
+  geo.setAttribute('position',new THREE.BufferAttribute(relaxed,3));
+  geo.setAttribute('normal',new THREE.BufferAttribute(output,3));
+ });
+ const bounds=new THREE.Box3().setFromObject(car),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());car.position.sub(center);const wrapper=new THREE.Group();wrapper.add(car);const scale=4.6/Math.max(size.x,size.z);wrapper.scale.setScalar(scale);carCentreZ=-center.z*scale;wrapper.position.y=size.y*scale/2+.015;
+ car.traverse(o=>{if(!o.isMesh)return;o.layers.enable(1);if(/tyre/i.test(o.name))o.layers.set(2);o.castShadow=true;o.receiveShadow=true;const tune=m=>{if(/tyre/i.test(o.name))return new THREE.MeshBasicMaterial({color:0x30343b,side:THREE.DoubleSide,toneMapped:false});if(m.map){const paint=new THREE.MeshPhysicalMaterial({map:m.map,color:0xc9cdd1,roughness:.3,metalness:.55,clearcoat:.65,clearcoatRoughness:.17,side:m.side});paint.normalMap=null;paint.onBeforeCompile=shader=>{
+ shader.vertexShader='varying vec3 repairPosition;\n'+shader.vertexShader;
+ shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nrepairPosition=position;');
+ shader.fragmentShader='varying vec3 repairPosition;\n'+shader.fragmentShader;
+ shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>
+ float rx=repairPosition.x;
+ float originalLuma=dot(diffuseColor.rgb,vec3(.2126,.7152,.0722));
+ float topRegion=smoothstep(.075,.115,repairPosition.y)*(1.0-smoothstep(.26,.32,abs(repairPosition.z)));
+ float glassMask=topRegion*(1.0-smoothstep(.20,.40,originalLuma));
+ diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.018,.023,.032),glassMask);
+ // Continuous curved paint boundary around the rear roof glass.
+ float roofWidth=.244-.105*rx;
+ float roofPatch=smoothstep(.15,.23,rx)*(1.0-smoothstep(.70,.74,rx))*smoothstep(.12,.145,repairPosition.y)*(1.0-smoothstep(.245,.265,abs(repairPosition.z)));
+ float roofInside=1.0-smoothstep(roofWidth-.001,roofWidth+.001,abs(repairPosition.z));
+ diffuseColor.rgb=mix(diffuseColor.rgb,mix(vec3(.60,.63,.67),vec3(.018,.023,.032),roofInside),roofPatch);
+ float sideSurface=smoothstep(.395,.415,abs(repairPosition.z));
+ float skirtRange=smoothstep(-.385,-.375,rx)*(1.0-smoothstep(.428,.440,rx));
+ float seam=-.01855019*rx*rx*rx+.11046494*rx*rx+.08338871*rx-.13792316;
+ float band=(1.0-smoothstep(.012,.025,abs(repairPosition.y-seam)))*sideSurface*skirtRange;
+ float silver=smoothstep(seam-.0007,seam+.0007,repairPosition.y);
+ diffuseColor.rgb=mix(diffuseColor.rgb,mix(vec3(.014,.018,.024),vec3(.60,.63,.67),silver),band);
+ float rearRange=smoothstep(.765,.780,rx)*(1.0-smoothstep(.935,.949,rx));
+ float rearSeam=-.065+.32*(rx-.76);
+ float rearBand=(1.0-smoothstep(.012,.024,abs(repairPosition.y-rearSeam)))*sideSurface*rearRange;
+ float rearSilver=smoothstep(rearSeam-.0007,rearSeam+.0007,repairPosition.y);
+ diffuseColor.rgb=mix(diffuseColor.rgb,mix(vec3(.014,.018,.024),vec3(.60,.63,.67),rearSilver),rearBand);
+ // Rear corner recesses are black throughout, including the inset faces.
+ float rearRecess=smoothstep(.755,.775,rx)*smoothstep(.29,.34,abs(repairPosition.z))*(1.0-smoothstep(.010,.012,repairPosition.y));
+ diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.009,.012,.017),rearRecess);
+
+ `);
+ shader.fragmentShader=shader.fragmentShader.replace('#include <lights_physical_fragment>','#include <lights_physical_fragment>\nmaterial.clearcoat *= 1.0-shoulderMask*.85;');
+ shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nfloat paintMask = smoothstep(0.14, 0.5, dot(diffuseColor.rgb, vec3(0.2126,0.7152,0.0722)));\nroughnessFactor = mix(0.19, 0.32, paintMask);\nfloat shoulderMask=smoothstep(.12,.17,abs(repairPosition.z))*(1.0-smoothstep(.29,.34,abs(repairPosition.z)))*smoothstep(.075,.12,repairPosition.y);\nroughnessFactor=mix(roughnessFactor,.58,shoulderMask);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor = mix(0.05, 0.62, paintMask);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};return paint}const copy=m.clone();copy.normalMap=null;if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
  wrapper.updateMatrixWorld(true);let tyreMin=Infinity;wrapper.traverse(o=>{if(o.isMesh&&/tyre/i.test(o.name))tyreMin=Math.min(tyreMin,new THREE.Box3().setFromObject(o).min.y)});if(Number.isFinite(tyreMin))wrapper.position.y-=tyreMin-.012;
  // A recessed underbody insert masks the noisy generated machinery below the rear outlets.
  const rearInsert=new THREE.Mesh(new THREE.BoxGeometry(.12,.095,.59),new THREE.MeshStandardMaterial({color:0x11151a,roughness:.86,metalness:.08}));
  rearInsert.name='Clean recessed rear underbody';rearInsert.position.set(.80,-.157,0);rearInsert.castShadow=true;rearInsert.receiveShadow=true;car.add(rearInsert);
+ // Smooth trim ribbons bridge the rough generated joins without changing the body shell.
+ const joinMaterial=new THREE.MeshStandardMaterial({color:0x11151b,metalness:.12,roughness:.58,side:THREE.DoubleSide});
+ for(const sign of [-1,1]){
+  for(const rear of [false]){
+   const verts=[],idx=[],steps=64;
+   for(let i=0;i<=steps;i++){
+    const t=i/steps,x=rear?mix(.775,.944,t):mix(-.378,.436,t);
+    const y=rear?-.065+.32*(x-.76):-.01855019*x*x*x+.11046494*x*x+.08338871*x-.13792316;
+    const z=sign*(rear?mix(.429,.404,t):.434);
+    verts.push(x,y-.009,z,x,y+.009,z);
+    if(i<steps){const k=i*2;idx.push(k,k+1,k+2,k+1,k+3,k+2)}
+   }
+   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(idx);geo.computeVertexNormals();
+   const trim=new THREE.Mesh(geo,joinMaterial);trim.name=rear?'Smooth rear corner join':'Smooth side skirt join';car.add(trim);
+  }
+ }
+ // A continuous lens and narrow housing cover the generated jagged paint boundary.
+ function rearRibbon(height,offset,material,name){
+  const positions=[],indices=[],segments=96;
+  for(let i=0;i<=segments;i++){
+   const z=-.369+i/segments*.738,edge=Math.abs(z)/.369;
+   const x=.933-.025*Math.pow(edge,3)+offset,y=.058-.002*Math.pow(edge,2);
+   const round=Math.sqrt(Math.max(0,1-Math.pow(Math.max(0,(edge-.985)/.015),2)));
+   positions.push(x,y-height*.5*round,z,x,y+height*.5*round,z);
+   if(i<segments){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2)}
+  }
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setIndex(indices);geometry.computeVertexNormals();
+  const mesh=new THREE.Mesh(geometry,material);mesh.name=name;car.add(mesh);return mesh;
+ }
+ rearRibbon(.023,0,new THREE.MeshStandardMaterial({color:0x090b0e,roughness:.45,metalness:.15,side:THREE.DoubleSide}),'Smooth rear lamp housing');
+ rearRibbon(.0065,.0015,new THREE.MeshBasicMaterial({color:0xff2915,side:THREE.DoubleSide,toneMapped:false}),'Continuous red rear lens');
  baseY=wrapper.position.y;wrapper.position.y=0;motion.position.y=baseY;motion.add(wrapper);notice.hidden=true;
  // Headlights sit at the nose and throw their light forward, away from the rear camera.
  const frontX=(bounds.min.x-center.x)*scale-.035,frontY=baseY+(.36-center.y)*scale;
@@ -144,9 +244,11 @@ function updateJourney(){
  const reveal=smooth((first-.34)/.24)*(1-smooth((travel-1.6)/.4));pilotCopy.style.opacity=reveal;pilotCopy.style.transform=`translateY(${24*(1-reveal)}px)`;pilotCopy.setAttribute('aria-hidden',String(reveal<.05));
  const physicsCopy=document.querySelector('.journey-physics'),physicsReveal=smooth((travel-2)/.55)*(1-smooth((travel-3.8)/.5));physicsCopy.style.opacity=physicsReveal;physicsCopy.setAttribute('aria-hidden',String(physicsReveal<.05));
  const landingCopy=document.querySelector('.journey-landing'),landingReveal=smooth((travel-4.6)/.55);landingCopy.style.opacity=landingReveal;landingCopy.setAttribute('aria-hidden',String(landingReveal<.05));
- document.querySelector('#modelProgress').style.width=`${progress*100}%`;document.querySelector('.journey-scroll').style.opacity=1-smooth(progress/.2);document.querySelector('#viewName').textContent=manual?'YOUR PERSPECTIVE':landing>.3?'04 / OUT OF THIS WORLD':flip>.5?'03 / BEYOND PHYSICS':t<.5?'01 / REAR PERSPECTIVE':'02 / SIDE PROFILE';
+ document.querySelector('#modelProgress').style.width=`${progress*100}%`;document.querySelector('.journey-scroll').style.opacity=1-smooth(progress/.2);document.querySelector('#viewName').textContent=manual?'YOUR PERSPECTIVE':landing>.3?'04 / GRAVITY DEFYING':flip>.5?'03 / BEYOND PHYSICS':t<.5?'01 / REAR PERSPECTIVE':'02 / SIDE PROFILE';
 }
 addEventListener('scroll',()=>{manual=false},{passive:true});document.querySelector('#reset').onclick=()=>{manual=false};
+
+
 
 
 

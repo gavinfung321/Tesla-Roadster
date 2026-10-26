@@ -41,7 +41,7 @@
 
 /* Hero wordmark and restrained metallic CTA edge. */
 @media(min-width:801px){.journey-hero{left:10%;width:40%}.journey-hero h1.roadster{display:inline-block;transform:skewX(-12deg) scaleX(1.34);transform-origin:left center;letter-spacing:4px;font-size:clamp(37px,3.8vw,66px)}.journey-hero .actions{margin-top:32px}}
-.journey-hero .button{border:1px solid transparent;background:linear-gradient(#111214,#111214) padding-box,linear-gradient(125deg,#bba779aa 0%,#e8d9ae55 30%,#51493666 60%,#b49b6555 100%) border-box;transition:filter .2s,box-shadow .2s}.journey-hero .button:hover{filter:brightness(1.2);box-shadow:0 0 20px #c8b17b14}
+.journey-hero .button,.closing .reserve{border:1px solid transparent;background:linear-gradient(#111214,#111214) padding-box,linear-gradient(125deg,#bba779aa 0%,#e8d9ae55 30%,#51493666 60%,#b49b6555 100%) border-box;transition:filter .2s,box-shadow .2s}.journey-hero .button:hover,.closing .reserve:hover{filter:brightness(1.2);box-shadow:0 0 20px #c8b17b14}
 
 .journey{height:470svh}.physics-anchor{position:absolute;top:330svh}.journey-physics{position:absolute;z-index:3;left:10%;top:7%;width:80%;max-width:1000px;opacity:0;pointer-events:none}.journey-physics h2{display:table;font-size:clamp(28px,3vw,41px);font-weight:400;border-bottom:1px solid var(--gold);padding-bottom:10px;margin-bottom:15px}.journey-physics p{font-size:16px;line-height:1.8;color:var(--white)}
 
@@ -50,3 +50,6 @@
 .journey-landing{position:absolute;z-index:3;left:10%;top:7%;width:80%;max-width:1000px;opacity:0;pointer-events:none}
 .journey-landing h2{display:table;font-size:clamp(28px,3vw,41px);font-weight:400;border-bottom:1px solid var(--gold);padding-bottom:10px;margin-bottom:15px}
 .journey-landing p{font-size:16px;line-height:1.8;color:var(--white)}
+
+/* Section navigation and project attribution. */
+#gallery,#performance{scroll-margin-top:28px}.maker-credit{color:#cdbb94;letter-spacing:.3px}footer{align-items:center;flex-wrap:wrap}
