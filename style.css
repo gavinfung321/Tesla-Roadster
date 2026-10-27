@@ -105,3 +105,6 @@ footer .demo-credits{text-align:center;color:#cdbb94;font:11px/1.8 Arial,sans-se
 
 /* Keep the gold fill on the animated layer itself for iOS Safari. */
 .hero-title-enter.gold{-webkit-text-fill-color:transparent;-webkit-background-clip:text;background-clip:text}
+
+/* Size the loading notice around its centre, rather than beyond the viewport. */
+@media(min-width:801px){.journey-model .loader{left:70%;width:min(360px,34vw);max-width:calc(100% - 32px);transform:translateX(-50%);white-space:normal;overflow-wrap:anywhere}}
