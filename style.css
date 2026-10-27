@@ -53,3 +53,4 @@
 
 /* Section navigation and project attribution. */
 #gallery,#performance{scroll-margin-top:28px}.maker-credit{color:#cdbb94;letter-spacing:.3px}footer{align-items:center;flex-wrap:wrap}
+footer .maker-credit a{color:inherit;text-decoration:underline;text-decoration-color:#c4a66d;text-underline-offset:4px;text-decoration-thickness:1px;transition:color .2s}footer .maker-credit a:hover{color:#fff0c7;text-decoration-thickness:2px}

@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RGBELoader} from 'three/addons/loaders/RGBELoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
 const diagnosticMeshes=[];let manual=false,scrollBlend=0,carCentreZ=0,baseY=0;
 const journey=document.querySelector(".journey"),heroCopy=document.querySelector(".journey-hero"),pilotCopy=document.querySelector(".journey-pilot");
 const clamp=x=>Math.max(0,Math.min(1,x)),mix=(a,b,t)=>a+(b-a)*t,smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
 const host=document.querySelector('#studio'),notice=document.querySelector('#loading');
+host.setAttribute('aria-busy','true');
+const slowLoad=setTimeout(()=>{if(!notice.hidden)notice.textContent='Loading the 3D car - this may take a moment on slower connections.'},12000);
 const motion=new THREE.Group();
 const scene=new THREE.Scene();scene.add(motion);scene.background=new THREE.Color(0x030405);scene.fog=new THREE.FogExp2(0x030405,.035);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.85;renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
@@ -31,6 +34,13 @@ const beam=new THREE.SpotLight(0xfff5e3,950);beam.position.set(7,5,5);beam.targe
 const key=new THREE.SpotLight(0xe9edf5,120);key.position.set(5,5,4);key.target.position.set(0,.7,0);key.angle=.52;key.penumbra=.9;key.decay=2;scene.add(key,key.target);
 const rim=new THREE.DirectionalLight(0xbacbe0,2.3);rim.position.set(-3,3,-5);rim.layers.set(1);key.layers.set(1);camera.layers.enable(1);scene.add(rim);
 camera.layers.enable(2);
+// Broad studio softboxes shape the silver reflections without lighting the floor.
+RectAreaLightUniformsLib.init();
+const paintSoftbox=new THREE.RectAreaLight(0xf5f5f2,5,7,2.5);
+paintSoftbox.position.set(.5,4.2,4.8);paintSoftbox.lookAt(0,1,0);paintSoftbox.layers.set(1);scene.add(paintSoftbox);
+const paintEdgebox=new THREE.RectAreaLight(0xdce5f2,3,6,1.3);
+paintEdgebox.position.set(-2,3,-4.5);paintEdgebox.lookAt(0,1,0);paintEdgebox.layers.set(1);scene.add(paintEdgebox);
+
 const tyreFills=[];for(const sign of [-1,1]){const light=new THREE.DirectionalLight(0xc4ceda,.55);light.position.set(5,2,sign*5);light.layers.set(2);scene.add(light);tyreFills.push(light)}
 
 // Turbulent cloud variants with irregular transparent margins and internal self-shadow.
@@ -68,12 +78,14 @@ new RGBELoader().load('assets/roadster-studio-v2.hdr',hdr=>{environment=pmrem.fr
 new GLTFLoader().load('assets/roadster.glb',gltf=>{
  const car=gltf.scene;
 
-// Locally relax tiny roof-edge ridges along their surface normal, then blend shading.
+// Three bounded passes relax roof-shoulder ridges without remeshing or changing UVs.
  // Displacement is capped; wheels, body panels and glass outline are preserved.
  car.traverse(mesh=>{
   if(!mesh.isMesh||!/Meshy.body/i.test(mesh.name))return;
-  const geo=mesh.geometry,pos=geo.attributes.position,norm=geo.attributes.normal;if(!norm)return;
-  const cell=.028,buckets=new Map(),selected=[];
+  const geo=mesh.geometry;if(!geo.attributes.normal)return;
+  for(let pass=0;pass<3;pass++){
+  const pos=geo.attributes.position,norm=geo.attributes.normal;
+  const cell=.035,buckets=new Map(),selected=[];
   for(let i=0;i<pos.count;i++){
    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
    if(x<-.65||y<.075||Math.abs(z)>.34)continue;
@@ -87,9 +99,9 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){
     for(const j of buckets.get((a+dx)+','+(b+dy)+','+(c+dz))||[]){
      const distance=(pos.getX(j)-x)**2+(pos.getY(j)-y)**2+(pos.getZ(j)-z)**2;
-     if(distance>.0016)continue;
-     const v=new THREE.Vector3().fromBufferAttribute(norm,j);if(v.dot(original)<.45)continue;
-     const w=Math.exp(-distance/.00045);n.addScaledVector(v,w);centroid.addScaledVector(new THREE.Vector3().fromBufferAttribute(pos,j),w);weight+=w;
+     if(distance>.0025)continue;
+     const v=new THREE.Vector3().fromBufferAttribute(norm,j);if(v.dot(original)<.72)continue;
+     const w=Math.exp(-distance/.0007);n.addScaledVector(v,w);centroid.addScaledVector(new THREE.Vector3().fromBufferAttribute(pos,j),w);weight+=w;
     }
    }
    if(weight){
@@ -98,15 +110,17 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
     const edgeWeight=THREE.MathUtils.smoothstep(Math.abs(z),.12,.18)*(1-THREE.MathUtils.smoothstep(Math.abs(z),.29,.34));
     const endWeight=THREE.MathUtils.smoothstep(x,-.65,-.48)*(1-THREE.MathUtils.smoothstep(x,.70,.79));
     centroid.multiplyScalar(1/weight).sub(new THREE.Vector3(x,y,z));
-    const move=THREE.MathUtils.clamp(centroid.dot(n)*.8,-.0025,.0025)*edgeWeight*endWeight;
+    const move=THREE.MathUtils.clamp(centroid.dot(n)*.45,-.0015,.0015)*edgeWeight*endWeight;
     relaxed[i*3]=x+n.x*move;relaxed[i*3+1]=y+n.y*move;relaxed[i*3+2]=z+n.z*move;
    }
   }
   geo.setAttribute('position',new THREE.BufferAttribute(relaxed,3));
   geo.setAttribute('normal',new THREE.BufferAttribute(output,3));
+  }
+  geo.computeBoundingBox();geo.computeBoundingSphere();
  });
  const bounds=new THREE.Box3().setFromObject(car),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());car.position.sub(center);const wrapper=new THREE.Group();wrapper.add(car);const scale=4.6/Math.max(size.x,size.z);wrapper.scale.setScalar(scale);carCentreZ=-center.z*scale;wrapper.position.y=size.y*scale/2+.015;
- car.traverse(o=>{if(!o.isMesh)return;o.layers.enable(1);if(/tyre/i.test(o.name))o.layers.set(2);o.castShadow=true;o.receiveShadow=true;const tune=m=>{if(/tyre/i.test(o.name))return new THREE.MeshBasicMaterial({color:0x30343b,side:THREE.DoubleSide,toneMapped:false});if(m.map){const paint=new THREE.MeshPhysicalMaterial({map:m.map,color:0xc9cdd1,roughness:.3,metalness:.55,clearcoat:.65,clearcoatRoughness:.17,side:m.side});paint.normalMap=null;paint.onBeforeCompile=shader=>{
+ car.traverse(o=>{if(!o.isMesh)return;o.layers.enable(1);if(/tyre/i.test(o.name))o.layers.set(2);o.castShadow=true;o.receiveShadow=true;const tune=m=>{if(/tyre/i.test(o.name))return new THREE.MeshStandardMaterial({color:0x24282d,roughness:.88,metalness:0,envMapIntensity:.45,emissive:0x101318,emissiveIntensity:.35,side:THREE.DoubleSide});if(m.map){const paint=new THREE.MeshPhysicalMaterial({map:m.map,color:0xe1e3e5,roughness:.26,metalness:.65,clearcoat:.9,clearcoatRoughness:.16,envMapIntensity:2.6,side:m.side});paint.normalMap=null;paint.onBeforeCompile=shader=>{
  shader.vertexShader='varying vec3 repairPosition;\n'+shader.vertexShader;
  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nrepairPosition=position;');
  shader.fragmentShader='varying vec3 repairPosition;\n'+shader.fragmentShader;
@@ -137,8 +151,8 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
  diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.009,.012,.017),rearRecess);
 
  `);
- shader.fragmentShader=shader.fragmentShader.replace('#include <lights_physical_fragment>','#include <lights_physical_fragment>\nmaterial.clearcoat *= 1.0-shoulderMask*.85;');
- shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nfloat paintMask = smoothstep(0.14, 0.5, dot(diffuseColor.rgb, vec3(0.2126,0.7152,0.0722)));\nroughnessFactor = mix(0.19, 0.32, paintMask);\nfloat shoulderMask=smoothstep(.12,.17,abs(repairPosition.z))*(1.0-smoothstep(.29,.34,abs(repairPosition.z)))*smoothstep(.075,.12,repairPosition.y);\nroughnessFactor=mix(roughnessFactor,.58,shoulderMask);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor = mix(0.05, 0.62, paintMask);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};return paint}const copy=m.clone();copy.normalMap=null;if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
+ shader.fragmentShader=shader.fragmentShader.replace('#include <lights_physical_fragment>','#include <lights_physical_fragment>\nmaterial.clearcoat *= mix(.08,.9,paintMask);\nmaterial.clearcoat = mix(material.clearcoat,.85,surfaceGlass);\nmaterial.clearcoatRoughness = mix(material.clearcoatRoughness,.12,surfaceGlass);');
+ shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n// Distinct finishes on existing colour regions, without moving their boundaries.\nfloat paintMask=step(.13,max(diffuseColor.r,max(diffuseColor.g,diffuseColor.b)));\nfloat surfaceGlass=(1.0-paintMask)*smoothstep(.035,.075,repairPosition.y)*(1.0-smoothstep(.73,.80,repairPosition.x));\nroughnessFactor=mix(.54,.26,paintMask);\nroughnessFactor=mix(roughnessFactor,.16,surfaceGlass);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor=mix(.08,.65,paintMask);\nmetalnessFactor=mix(metalnessFactor,0.0,surfaceGlass);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};return paint}const copy=m.clone();copy.normalMap=null;if(/skirt|liner|undertray|shield/i.test(o.name)){copy.color.set(0x15191f);copy.roughness=.56;copy.metalness=.08;copy.envMapIntensity=.8;}if(/alloy|wheel face|spokes|hub/i.test(o.name)){copy.roughness=/spokes|hub/i.test(o.name)?.36:.30;copy.metalness=.65;copy.envMapIntensity=1.8;}if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
  wrapper.updateMatrixWorld(true);let tyreMin=Infinity;wrapper.traverse(o=>{if(o.isMesh&&/tyre/i.test(o.name))tyreMin=Math.min(tyreMin,new THREE.Box3().setFromObject(o).min.y)});if(Number.isFinite(tyreMin))wrapper.position.y-=tyreMin-.012;
  // A recessed underbody insert masks the noisy generated machinery below the rear outlets.
  const rearInsert=new THREE.Mesh(new THREE.BoxGeometry(.12,.095,.59),new THREE.MeshStandardMaterial({color:0x11151a,roughness:.86,metalness:.08}));
@@ -174,7 +188,7 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
  }
  rearRibbon(.023,0,new THREE.MeshStandardMaterial({color:0x090b0e,roughness:.45,metalness:.15,side:THREE.DoubleSide}),'Smooth rear lamp housing');
  rearRibbon(.0065,.0015,new THREE.MeshBasicMaterial({color:0xff2915,side:THREE.DoubleSide,toneMapped:false}),'Continuous red rear lens');
- baseY=wrapper.position.y;wrapper.position.y=0;motion.position.y=baseY;motion.add(wrapper);notice.hidden=true;
+ baseY=wrapper.position.y;wrapper.position.y=0;motion.position.y=baseY;motion.add(wrapper);notice.hidden=true;clearTimeout(slowLoad);host.setAttribute('aria-busy','false');
  // Headlights sit at the nose and throw their light forward, away from the rear camera.
  const frontX=(bounds.min.x-center.x)*scale-.035,frontY=baseY+(.36-center.y)*scale;
  const lampY=Math.max(.38,Math.min(.65,frontY));
@@ -189,7 +203,7 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
 
 
 
-},undefined,e=>{notice.textContent='The model could not load. Please refresh.';console.error(e)});
+},event=>{if(event.total){notice.textContent='Loading 3D car: '+Math.round(event.loaded/event.total*100)+'%';}},e=>{clearTimeout(slowLoad);host.setAttribute('aria-busy','false');notice.textContent='The 3D car could not load. ';const retry=document.createElement('button');retry.textContent='Try again';retry.onclick=()=>location.reload();notice.appendChild(retry);console.error(e)});
 let visible=true;document.addEventListener('visibilitychange',()=>visible=!document.hidden);renderer.setAnimationLoop(()=>{if(!visible)return;updateJourney();controls.update();renderer.render(scene,camera)});
 
 
@@ -252,3 +266,5 @@ addEventListener('scroll',()=>{manual=false},{passive:true});document.querySelec
 
 
 
+
+addEventListener('journey:navigate',()=>{manual=false;scrollBlend=Math.max(0,(scrollY-journey.offsetTop)/innerHeight)});

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://gavinfung321.github.io/Tesla-Roadster/sitemap.xml
