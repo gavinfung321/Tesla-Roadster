@@ -108,3 +108,20 @@ footer .demo-credits{text-align:center;color:#cdbb94;font:11px/1.8 Arial,sans-se
 
 /* Size the loading notice around its centre, rather than beyond the viewport. */
 @media(min-width:801px){.journey-model .loader{left:70%;width:min(360px,34vw);max-width:calc(100% - 32px);transform:translateX(-50%);white-space:normal;overflow-wrap:anywhere}}
+
+@media(min-width:801px){.nav nav{margin-left:auto}.nav-tools{display:none}}
+
+@media(max-width:800px){
+ #menu{background:transparent;border:0;min-width:44px;min-height:44px;padding:5px 0;position:relative}
+ #menu[aria-expanded="true"]::before,#menu[aria-expanded="true"]::after{content:"";position:absolute;left:12px;top:21px;width:22px;height:2px;background:currentColor;border-radius:1px;transform:rotate(45deg)}
+ #menu[aria-expanded="true"]::after{transform:rotate(-45deg)}
+}
+
+/* A quiet downward sequence within the existing scroll hint. */
+.journey-scroll .hero-hint-arrow{position:relative;width:16px;height:30px;animation:none}
+.hero-hint-arrow i{position:absolute;left:4px;width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);opacity:.18;animation:scrollArrowFlow 2.2s ease-in-out infinite}
+.hero-hint-arrow i:nth-child(1){top:0;animation-delay:0s}
+.hero-hint-arrow i:nth-child(2){top:8px;animation-delay:.18s}
+.hero-hint-arrow i:nth-child(3){top:16px;animation-delay:.36s}
+@keyframes scrollArrowFlow{0%,65%,100%{opacity:.18;translate:0 -2px}30%{opacity:.85;translate:0 2px}}
+@media(prefers-reduced-motion:reduce){.hero-hint-arrow i{animation:none;opacity:.65;translate:none}}

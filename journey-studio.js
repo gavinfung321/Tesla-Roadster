@@ -267,7 +267,7 @@ function updateJourney(){
  const reveal=smooth((first-.34)/.24)*(1-smooth((travel-1.6)/.4));pilotCopy.style.opacity=reveal;pilotCopy.style.transform=`translateY(${24*(1-reveal)}px)`;pilotCopy.setAttribute('aria-hidden',String(reveal<.05));
  const physicsCopy=document.querySelector('.journey-physics'),physicsReveal=smooth((travel-2)/.55)*(1-smooth((travel-3.8)/.5));physicsCopy.style.opacity=physicsReveal;physicsCopy.setAttribute('aria-hidden',String(physicsReveal<.05));
  const landingCopy=document.querySelector('.journey-landing'),landingReveal=smooth((travel-4.6)/.55);landingCopy.style.opacity=landingReveal;landingCopy.setAttribute('aria-hidden',String(landingReveal<.05));
- document.querySelector('#modelProgress').style.width=`${progress*100}%`;document.querySelector('.journey-scroll').style.opacity=1-smooth(progress/.2);document.querySelector('#viewName').textContent=manual?'YOUR PERSPECTIVE':landing>.3?'04 / GRAVITY DEFYING':flip>.5?'03 / BEYOND PHYSICS':t<.5?'01 / REAR PERSPECTIVE':'02 / SIDE PROFILE';
+ document.querySelector('#modelProgress').style.width=`${progress*100}%`;document.querySelector('.journey-scroll').style.opacity=1-smooth(progress/.2);document.querySelector('#viewName').textContent=manual?'YOUR PERSPECTIVE':landing>.3?'04 / LANDING':flip>.5?'03 / UPSIDE DOWN':t<.5?'01 / REAR PERSPECTIVE':'02 / SIDE PROFILE';
 }
 addEventListener('scroll',()=>{manual=false},{passive:true});document.querySelector('#reset').onclick=()=>{manual=false};
 
