@@ -6,7 +6,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
 const loadCheck=new URLSearchParams(location.search).has('loadcheck');
 const loadTimes={moduleStarted:performance.now()};let firstCarFrame=false;
-const compactScreen=matchMedia('(max-width: 800px)').matches;
+const compactScreen=matchMedia('(max-width: 800px), (hover: none) and (pointer: coarse)').matches;
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const diagnosticMeshes=[];let manual=false,scrollBlend=0,carCentreZ=0,baseY=0;
 const journey=document.querySelector(".journey"),heroCopy=document.querySelector(".journey-hero"),pilotCopy=document.querySelector(".journey-pilot");
@@ -16,7 +16,7 @@ host.setAttribute('aria-busy','true');
 const slowLoad=setTimeout(()=>{if(!notice.hidden)notice.textContent='Loading the 3D car - this may take a moment on slower connections.'},12000);
 const motion=new THREE.Group();
 const scene=new THREE.Scene();scene.add(motion);scene.background=new THREE.Color(0x030405);scene.fog=new THREE.FogExp2(0x030405,.035);
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,compactScreen?1.25:1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.85;renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
+const renderer=new THREE.WebGLRenderer({antialias:!compactScreen,powerPreference:compactScreen?'low-power':'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,compactScreen?1:1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=compactScreen?THREE.PCFSoftShadowMap:THREE.VSMShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.85;renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
 const camera=new THREE.PerspectiveCamera(32,1,.1,80);camera.position.set(10.3,2.8,0);
 const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;controls.addEventListener("start",()=>manual=true);controls.enablePan=false;
 const rotateButton=document.createElement('button');rotateButton.id='rotateCar';rotateButton.textContent='Rotate car';rotateButton.setAttribute('aria-pressed','false');document.querySelector('.journey-status>div').prepend(rotateButton);
@@ -60,7 +60,7 @@ const tyreFills=[];for(const sign of [-1,1]){const light=new THREE.DirectionalLi
 
 // Turbulent cloud variants with irregular transparent margins and internal self-shadow.
 function cloudTexture(variant){
- const n=256,c=document.createElement('canvas');c.width=c.height=n;
+ const n=compactScreen?128:256,c=document.createElement('canvas');c.width=c.height=n;
  const cx=c.getContext('2d'),im=cx.createImageData(n,n);
  const hash=(x,y)=>{const v=Math.sin(x*127.1+y*311.7+variant*74.7)*43758.5453;return v-Math.floor(v)};
  const noise=(x,y)=>{const ix=Math.floor(x),iy=Math.floor(y);let u=x-ix,v=y-iy;u=u*u*(3-2*u);v=v*v*(3-2*v);return mix(mix(hash(ix,iy),hash(ix+1,iy),u),mix(hash(ix,iy+1),hash(ix+1,iy+1),u),v)};
@@ -79,7 +79,7 @@ function cloudTexture(variant){
 }
 const smokeTextures=[0,1,2,3].map(cloudTexture),smokeTexture=smokeTextures[0];
 const smokePuffs=[];
-for(let i=0;i<(compactScreen?40:84);i++){
+for(let i=0;i<(compactScreen?24:84);i++){
  const material=new THREE.SpriteMaterial({map:smokeTextures[i%4],color:i%3===0?0x9ba4af:0xe0e3e7,transparent:true,opacity:0,depthWrite:false,rotation:i*2.39996});
  const puff=new THREE.Sprite(material);puff.visible=false;scene.add(puff);smokePuffs.push(puff);
 }
@@ -89,56 +89,20 @@ const landingPlumes=[-1,1].map(side=>{
  plume.visible=false;scene.add(plume);return {plume,side};
 });
 const pmrem=new THREE.PMREMGenerator(renderer);let environment;
-new RGBELoader().load('assets/roadster-studio-v2.hdr',hdr=>{environment=pmrem.fromEquirectangular(hdr).texture;scene.environment=environment;scene.environmentIntensity=.22;hdr.dispose();pmrem.dispose()});
-const modelURL='assets/roadster-web.glb'+(loadCheck?'?loadcheck='+Date.now():'');
+loadTimes.environmentStarted=performance.now();
+new RGBELoader().load('assets/roadster-studio-v2.hdr',hdr=>{environment=pmrem.fromEquirectangular(hdr).texture;scene.environment=environment;scene.environmentIntensity=.22;hdr.dispose();pmrem.dispose();loadTimes.environmentReady=performance.now()},undefined,()=>{pmrem.dispose();loadTimes.environmentReady=performance.now();loadTimes.environmentFailed=true});
+const modelURL=(compactScreen?'assets/roadster-mobile.glb':'assets/roadster-web.glb')+'?v=baked1'+(loadCheck?'&loadcheck='+Date.now():'');
 loadTimes.requestStarted=performance.now();
 new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(modelURL,gltf=>{
  loadTimes.modelDecoded=performance.now();
  const car=gltf.scene;
 
-// Three bounded passes relax roof-shoulder ridges without remeshing or changing UVs.
- // Displacement is capped; wheels, body panels and glass outline are preserved.
- car.traverse(mesh=>{
-  if(!mesh.isMesh||!/Meshy.body/i.test(mesh.name))return;
-  const geo=mesh.geometry;if(!geo.attributes.normal)return;
-  for(let pass=0;pass<(compactScreen?1:3);pass++){
-  const pos=geo.attributes.position,norm=geo.attributes.normal;
-  const cell=.035,buckets=new Map(),selected=[];
-  for(let i=0;i<pos.count;i++){
-   const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
-   if(x<-.65||y<.075||Math.abs(z)>.34)continue;
-   const a=Math.floor(x/cell),b=Math.floor(y/cell),c=Math.floor(z/cell),key=a+','+b+','+c;
-   if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(i);selected.push(i);
-  }
-  const output=new Float32Array(norm.array),relaxed=new Float32Array(pos.array);
-  for(const i of selected){
-   const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i),a=Math.floor(x/cell),b=Math.floor(y/cell),c=Math.floor(z/cell);
-   const n=new THREE.Vector3(),centroid=new THREE.Vector3(),original=new THREE.Vector3().fromBufferAttribute(norm,i);let weight=0;
-   for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){
-    for(const j of buckets.get((a+dx)+','+(b+dy)+','+(c+dz))||[]){
-     const distance=(pos.getX(j)-x)**2+(pos.getY(j)-y)**2+(pos.getZ(j)-z)**2;
-     if(distance>.0025)continue;
-     const v=new THREE.Vector3().fromBufferAttribute(norm,j);if(v.dot(original)<.72)continue;
-     const w=Math.exp(-distance/.0007);n.addScaledVector(v,w);centroid.addScaledVector(new THREE.Vector3().fromBufferAttribute(pos,j),w);weight+=w;
-    }
-   }
-   if(weight){
-    n.normalize();original.lerp(n,.95).normalize();output.set(original.toArray(),i*3);
-    // Only the narrow roof shoulder strips receive geometric relaxation.
-    const edgeWeight=THREE.MathUtils.smoothstep(Math.abs(z),.12,.18)*(1-THREE.MathUtils.smoothstep(Math.abs(z),.29,.34));
-    const endWeight=THREE.MathUtils.smoothstep(x,-.65,-.48)*(1-THREE.MathUtils.smoothstep(x,.70,.79));
-    centroid.multiplyScalar(1/weight).sub(new THREE.Vector3(x,y,z));
-    const move=THREE.MathUtils.clamp(centroid.dot(n)*.45,-.0015,.0015)*edgeWeight*endWeight;
-    relaxed[i*3]=x+n.x*move;relaxed[i*3+1]=y+n.y*move;relaxed[i*3+2]=z+n.z*move;
-   }
-  }
-  geo.setAttribute('position',new THREE.BufferAttribute(relaxed,3));
-  geo.setAttribute('normal',new THREE.BufferAttribute(output,3));
-  }
-  geo.computeBoundingBox();geo.computeBoundingSphere();
- });
+// Permanent roof smoothing is baked into the GLB during asset preparation.
+ // Keep the original shaders: they define the approved glass and paint boundaries.
+ const materialCache=new Map();
+ const sharedTyre=new THREE.MeshStandardMaterial({color:0x24282d,roughness:.88,metalness:0,envMapIntensity:.45,emissive:0x101318,emissiveIntensity:.35,side:THREE.DoubleSide});
  const bounds=new THREE.Box3().setFromObject(car),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());car.position.sub(center);const wrapper=new THREE.Group();wrapper.add(car);const scale=4.6/Math.max(size.x,size.z);wrapper.scale.setScalar(scale);carCentreZ=-center.z*scale;wrapper.position.y=size.y*scale/2+.015;
- car.traverse(o=>{if(!o.isMesh)return;o.layers.enable(1);if(/tyre/i.test(o.name))o.layers.set(2);o.castShadow=true;o.receiveShadow=true;const tune=m=>{if(/tyre/i.test(o.name))return new THREE.MeshStandardMaterial({color:0x24282d,roughness:.88,metalness:0,envMapIntensity:.45,emissive:0x101318,emissiveIntensity:.35,side:THREE.DoubleSide});if(m.map){const paint=new THREE.MeshPhysicalMaterial({map:m.map,color:0xe1e3e5,roughness:.26,metalness:.65,clearcoat:.9,clearcoatRoughness:.16,envMapIntensity:2.6,side:m.side});paint.normalMap=null;paint.onBeforeCompile=shader=>{
+ car.traverse(o=>{if(!o.isMesh)return;o.layers.enable(1);if(/tyre/i.test(o.name))o.layers.set(2);o.castShadow=true;o.receiveShadow=true;const tune=m=>{if(/tyre/i.test(o.name))return sharedTyre;if(m.map){const key=m.map.uuid+':'+m.side;if(materialCache.has(key))return materialCache.get(key);const paint=new THREE.MeshPhysicalMaterial({map:m.map,color:0xe1e3e5,roughness:.26,metalness:.65,clearcoat:.9,clearcoatRoughness:.16,envMapIntensity:2.6,side:m.side});paint.normalMap=null;paint.onBeforeCompile=shader=>{
  shader.vertexShader='varying vec3 repairPosition;\n'+shader.vertexShader;
  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nrepairPosition=position;');
  shader.fragmentShader='varying vec3 repairPosition;\n'+shader.fragmentShader;
@@ -170,7 +134,7 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(modelURL,gltf=>{
 
  `);
  shader.fragmentShader=shader.fragmentShader.replace('#include <lights_physical_fragment>','#include <lights_physical_fragment>\nmaterial.clearcoat *= mix(.08,.9,paintMask);\nmaterial.clearcoat = mix(material.clearcoat,.85,surfaceGlass);\nmaterial.clearcoatRoughness = mix(material.clearcoatRoughness,.12,surfaceGlass);');
- shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n// Distinct finishes on existing colour regions, without moving their boundaries.\nfloat paintMask=step(.13,max(diffuseColor.r,max(diffuseColor.g,diffuseColor.b)));\nfloat surfaceGlass=(1.0-paintMask)*smoothstep(.035,.075,repairPosition.y)*(1.0-smoothstep(.73,.80,repairPosition.x));\nroughnessFactor=mix(.54,.26,paintMask);\nroughnessFactor=mix(roughnessFactor,.16,surfaceGlass);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor=mix(.08,.65,paintMask);\nmetalnessFactor=mix(metalnessFactor,0.0,surfaceGlass);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};return paint}const copy=m.clone();copy.normalMap=null;if(/skirt|liner|undertray|shield/i.test(o.name)){copy.color.set(0x15191f);copy.roughness=.56;copy.metalness=.08;copy.envMapIntensity=.8;}if(/alloy|wheel[_ ]face|spokes|hub/i.test(o.name)){o.layers.enable(3);const dark=/spokes|hub/i.test(o.name);copy.color.set(dark?0x343b43:/wheel[_ ]face/i.test(o.name)?0x929ca6:0xbdc5cd);copy.roughness=dark?.32:.27;copy.metalness=dark?.72:.82;copy.envMapIntensity=2.1;}if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
+ shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n// Distinct finishes on existing colour regions, without moving their boundaries.\nfloat paintMask=step(.13,max(diffuseColor.r,max(diffuseColor.g,diffuseColor.b)));\nfloat surfaceGlass=(1.0-paintMask)*smoothstep(.035,.075,repairPosition.y)*(1.0-smoothstep(.73,.80,repairPosition.x));\nroughnessFactor=mix(.54,.26,paintMask);\nroughnessFactor=mix(roughnessFactor,.16,surfaceGlass);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor=mix(.08,.65,paintMask);\nmetalnessFactor=mix(metalnessFactor,0.0,surfaceGlass);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};materialCache.set(key,paint);return paint}const copy=m.clone();copy.normalMap=null;if(/skirt|liner|undertray|shield/i.test(o.name)){copy.color.set(0x15191f);copy.roughness=.56;copy.metalness=.08;copy.envMapIntensity=.8;}if(/alloy|wheel[_ ]face|spokes|hub/i.test(o.name)){o.layers.enable(3);const dark=/spokes|hub/i.test(o.name);copy.color.set(dark?0x343b43:/wheel[_ ]face/i.test(o.name)?0x929ca6:0xbdc5cd);copy.roughness=dark?.32:.27;copy.metalness=dark?.72:.82;copy.envMapIntensity=2.1;}if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
  wrapper.updateMatrixWorld(true);let tyreMin=Infinity;wrapper.traverse(o=>{if(o.isMesh&&/tyre/i.test(o.name))tyreMin=Math.min(tyreMin,new THREE.Box3().setFromObject(o).min.y)});if(Number.isFinite(tyreMin))wrapper.position.y-=tyreMin-.012;
  // A recessed underbody insert masks the noisy generated machinery below the rear outlets.
  const rearInsert=new THREE.Mesh(new THREE.BoxGeometry(.12,.095,.59),new THREE.MeshStandardMaterial({color:0x11151a,roughness:.86,metalness:.08}));
@@ -206,7 +170,7 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(modelURL,gltf=>{
  }
  rearRibbon(.023,0,new THREE.MeshStandardMaterial({color:0x090b0e,roughness:.45,metalness:.15,side:THREE.DoubleSide}),'Smooth rear lamp housing');
  rearRibbon(.0065,.0015,new THREE.MeshBasicMaterial({color:0xff2915,side:THREE.DoubleSide,toneMapped:false}),'Continuous red rear lens');
- baseY=wrapper.position.y;wrapper.position.y=0;motion.position.y=baseY;motion.add(wrapper);loadTimes.materialsReady=performance.now();notice.hidden=true;clearTimeout(slowLoad);host.setAttribute('aria-busy','false');
+ baseY=wrapper.position.y;wrapper.position.y=0;motion.position.y=baseY;motion.add(wrapper);loadTimes.materialsReady=performance.now();notice.textContent='Preparing the interactive view...';
  // Headlights sit at the nose and throw their light forward, away from the rear camera.
  const frontX=(bounds.min.x-center.x)*scale-.035,frontY=baseY+(.36-center.y)*scale;
  const lampY=Math.max(.38,Math.min(.65,frontY));
@@ -225,7 +189,31 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(modelURL,gltf=>{
 },event=>{if(event.total){const percent=Math.round(event.loaded/event.total*100);notice.textContent=percent>=100?'Preparing materials and lighting...':'Loading 3D car: '+percent+'%';}},e=>{clearTimeout(slowLoad);host.setAttribute('aria-busy','false');notice.textContent='The 3D car could not load. ';const retry=document.createElement('button');retry.textContent='Try again';retry.onclick=()=>location.reload();notice.appendChild(retry);console.error(e)});
 let visible=!document.hidden,lastFrame=0,frameDelta=1/60;
 document.addEventListener('visibilitychange',()=>{visible=!document.hidden;lastFrame=0});
-renderer.setAnimationLoop(now=>{const elapsed=lastFrame?now-lastFrame:33.34;if(compactScreen&&elapsed<32)return;lastFrame=now;frameDelta=Math.min(elapsed/1000,.05);if(!visible)return;const rect=journey.getBoundingClientRect();if(rect.bottom<0||rect.top>innerHeight)return;updateJourney();controls.update();renderer.render(scene,camera);if(!firstCarFrame&&loadTimes.materialsReady&&environment){firstCarFrame=true;requestAnimationFrame(()=>{const resource=performance.getEntriesByType('resource').find(r=>r.name.includes(modelURL));const report={device:compactScreen?'mobile layout':'desktop layout',navigationToCarMs:Math.round(performance.now()),modelTransferMs:resource?Math.round(resource.responseEnd-resource.startTime):null,modelDecodeMs:resource?Math.round(loadTimes.modelDecoded-resource.responseEnd):null,materialSetupMs:Math.round(loadTimes.materialsReady-loadTimes.modelDecoded),modelBytes:resource?.decodedBodySize||null,modelURL};const output=document.createElement('output');output.id='loadMetrics';output.hidden=true;output.textContent=JSON.stringify(report);document.body.append(output);if(loadCheck){const panel=document.createElement('div');panel.id='phoneLoadReport';panel.style.cssText='position:fixed;left:12px;bottom:55px;z-index:50;max-width:calc(100vw - 24px);padding:10px 14px;background:#111e;color:#eee;border:1px solid #bca778;font:12px/1.5 Arial,sans-serif;pointer-events:none';panel.textContent='Car ready: '+(report.navigationToCarMs/1000).toFixed(1)+'s | Model: '+(report.modelBytes/1000000).toFixed(1)+' MB';document.body.append(panel)}})}});
+renderer.setAnimationLoop(now=>{
+ const elapsed=lastFrame?now-lastFrame:33.34;if(compactScreen&&elapsed<32)return;
+ lastFrame=now;frameDelta=Math.min(elapsed/1000,.05);
+ if(!visible||document.querySelector('#reserveDialog')?.open)return;
+ const rect=journey.getBoundingClientRect();if(rect.bottom<0||rect.top>innerHeight)return;
+ updateJourney();controls.update();
+ const renderStarted=performance.now();renderer.render(scene,camera);
+ if(!firstCarFrame&&loadTimes.materialsReady&&loadTimes.environmentReady){
+  firstCarFrame=true;
+  const firstRenderMs=performance.now()-renderStarted;
+  requestAnimationFrame(()=>{
+   host.classList.add('is-ready');notice.hidden=true;clearTimeout(slowLoad);host.setAttribute('aria-busy','false');
+   const resource=performance.getEntriesByType('resource').find(r=>r.name.includes(modelURL));
+   const readyAt=performance.now();
+   const report={device:compactScreen?'mobile layout':'desktop layout',navigationToCarMs:Math.round(readyAt),startupMs:Math.round(loadTimes.requestStarted),modelTransferMs:resource?Math.round(resource.responseEnd-resource.startTime):null,modelDecodeMs:resource?Math.round(Math.max(0,loadTimes.modelDecoded-resource.responseEnd)):null,materialSetupMs:Math.round(loadTimes.materialsReady-loadTimes.modelDecoded),graphicsPreparationMs:Math.round(Math.max(0,readyAt-Math.max(loadTimes.materialsReady,loadTimes.environmentReady))),firstRenderMs:Math.round(firstRenderMs),environmentReadyMs:Math.round(loadTimes.environmentReady),environmentFailed:!!loadTimes.environmentFailed,modelBytes:resource?.decodedBodySize||null,modelURL};
+   const output=document.createElement('output');output.id='loadMetrics';output.hidden=true;output.textContent=JSON.stringify(report);document.body.append(output);
+   if(loadCheck){
+    const seconds=ms=>ms===null?'unavailable':(ms/1000).toFixed(1)+'s';
+    const panel=document.createElement('div');panel.id='phoneLoadReport';
+    panel.style.cssText='position:fixed;left:12px;bottom:55px;z-index:50;max-width:calc(100vw - 24px);padding:10px 14px;background:#111e;color:#eee;border:1px solid #bca778;font:12px/1.5 Arial,sans-serif;pointer-events:none;white-space:pre-line';
+    panel.textContent='Car ready: '+seconds(report.navigationToCarMs)+' | Model: '+(report.modelBytes/1000000).toFixed(1)+' MB\nDownload: '+seconds(report.modelTransferMs)+' | Decode: '+seconds(report.modelDecodeMs)+'\nMaterials: '+seconds(report.materialSetupMs)+' | Graphics: '+seconds(report.graphicsPreparationMs)+'\nStartup: '+seconds(report.startupMs)+' | Lighting ready at: '+seconds(report.environmentReadyMs)+' (parallel)';document.body.append(panel);
+   }
+  });
+ }
+});
 
 
 function updateJourney(){
@@ -275,7 +263,7 @@ function updateJourney(){
  beam.position.set(mix(mix(7,2,u),-1,flip),5,mix(mix(5,7,u),7,flip));beam.position.y=5;beam.target.position.set(mix(-1,0,u),0,0);beam.angle=mix(mix(.33,.48,u),.6,flip);beam.intensity=mix(950,1100,u)*((1-smooth((flip-.48)/.52))+landingFloor*.8);
  if(landing>0){beam.position.set(mix(2,5,landing),5,mix(7,4,landing));beam.target.position.set(1,0,0);beam.angle=mix(.6,.55,landing)}
  key.position.set(mix(5,1,u),mix(5,3.1,overhead),mix(4,5,u));key.intensity=mix(88,125,overhead);rim.intensity=mix(mix(1.8,1.45,u),1.8,overhead);
- heroCopy.style.opacity=1-smooth((first-.04)/.27);heroCopy.style.pointerEvents=first<.25?'auto':'none';heroCopy.setAttribute('aria-hidden',String(first>=.25));heroCopy.querySelectorAll('a').forEach(a=>a.tabIndex=first>=.25?-1:0);
+ heroCopy.style.opacity=1-smooth((first-.04)/.27);heroCopy.style.pointerEvents=first<.25?'auto':'none';heroCopy.setAttribute('aria-hidden',String(first>=.25));heroCopy.querySelectorAll('a,button').forEach(a=>a.tabIndex=first>=.25?-1:0);
  const reveal=smooth((first-.34)/.24)*(1-smooth((travel-1.6)/.4));pilotCopy.style.opacity=reveal;pilotCopy.style.transform=`translateY(${24*(1-reveal)}px)`;pilotCopy.setAttribute('aria-hidden',String(reveal<.05));
  const physicsCopy=document.querySelector('.journey-physics'),physicsReveal=smooth((travel-2)/.55)*(1-smooth((travel-3.8)/.5));physicsCopy.style.opacity=physicsReveal;physicsCopy.setAttribute('aria-hidden',String(physicsReveal<.05));
  const landingCopy=document.querySelector('.journey-landing'),landingReveal=smooth((travel-4.6)/.55);landingCopy.style.opacity=landingReveal;landingCopy.setAttribute('aria-hidden',String(landingReveal<.05));

@@ -83,3 +83,25 @@ html,body{overflow-x:clip}
 .reservation-close{position:fixed;right:calc(2vw + 18px);top:calc(3svh + 10px)}@media(max-width:800px){.reservation-close{right:14px;top:12px}}
 
 footer .demo-credits{text-align:center;color:#cdbb94;font:11px/1.8 Arial,sans-serif}footer .demo-credits .maker-credit,footer .demo-credits .concept{color:inherit;font:inherit;letter-spacing:0;margin:0}footer .demo-credits .concept{margin-top:8px}footer{flex-direction:column;gap:18px;padding-top:60px}
+
+/* Keep the side-profile copy consistent on phones as well as desktop. */
+@media(max-width:800px){.journey-pilot h2{display:table;border-bottom:1px solid var(--gold);font-weight:400;letter-spacing:-.6px;line-height:1.25}.journey-pilot>p:last-child{color:var(--white);margin-top:0;max-width:none}}
+
+@media(max-width:800px){.journey-hero .button{justify-content:center;text-align:center;gap:0}.closing .reserve{justify-content:center;text-align:center}}
+
+/* Reveal the interactive scene when its first frame is ready. */
+.journey-model canvas{opacity:0;transition:opacity .65s ease}
+.journey-model.is-ready canvas{opacity:1}
+@media(prefers-reduced-motion:reduce){.journey-model canvas{transition:none}}
+
+/* Animate children so scroll-driven parent opacity and title proportions stay intact. */
+@keyframes heroEnter{from{opacity:0;translate:0 12px}to{opacity:1;translate:0 0}}
+@keyframes heroArrowEnter{from{translate:0 -4px}to{translate:0 0}}
+.hero-title-enter{display:inline-block;animation:heroEnter .7s cubic-bezier(.22,1,.36,1) both}
+.journey-hero .actions{animation:heroEnter .65s cubic-bezier(.22,1,.36,1) .18s both}
+.journey-scroll .hero-hint-enter{display:inline-flex;align-items:center;gap:25px;font-size:inherit;color:inherit;animation:heroEnter .6s ease .5s both}
+.journey-scroll .hero-hint-arrow{display:inline-block;animation:heroArrowEnter .65s ease .7s both}
+@media(prefers-reduced-motion:reduce){.hero-title-enter,.journey-hero .actions,.journey-scroll .hero-hint-enter,.journey-scroll .hero-hint-arrow{animation:none;opacity:1;translate:none}}
+
+/* Keep the gold fill on the animated layer itself for iOS Safari. */
+.hero-title-enter.gold{-webkit-text-fill-color:transparent;-webkit-background-clip:text;background-clip:text}
