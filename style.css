@@ -54,3 +54,32 @@
 /* Section navigation and project attribution. */
 #gallery,#performance{scroll-margin-top:28px}.maker-credit{color:#cdbb94;letter-spacing:.3px}footer{align-items:center;flex-wrap:wrap}
 footer .maker-credit a{color:inherit;text-decoration:underline;text-decoration-color:#c4a66d;text-underline-offset:4px;text-decoration-thickness:1px;transition:color .2s}footer .maker-credit a:hover{color:#fff0c7;text-decoration-thickness:2px}
+
+/* Responsive studio: reserve the upper area for copy and keep touch scrolling natural. */
+html,body{overflow-x:clip}
+.loader{top:48%;max-width:80%;text-align:center;padding:14px 18px;background:#080b10d9;border:1px solid #bba77955;border-radius:3px}
+.loader button{margin-left:10px;background:#16191d;border:1px solid #bba779;padding:5px 12px}
+#rotateCar{background:none;border:1px solid #bba77966;padding:5px 9px;font-size:10px;color:#d7c69e}
+#rotateCar[aria-pressed=true]{background:#bba77922}
+@media(max-width:800px){
+ .journey-stage{min-height:0;height:100svh}
+ .journey-hero{left:8%;top:17%;width:84%;text-align:center}
+ .journey-hero h1.roadster{font-size:clamp(30px,8vw,48px);letter-spacing:3px}
+ .journey-hero .actions{justify-content:center;margin-top:24px}
+ .journey-pilot,.journey-physics,.journey-landing{left:7%;top:8%;width:86%;max-width:none}
+ .journey-pilot h2,.journey-physics h2,.journey-landing h2{font-size:clamp(23px,6vw,30px);margin-bottom:12px;padding-bottom:8px}
+ .journey-pilot>p:last-child,.journey-physics p,.journey-landing p{font-size:clamp(11px,3.15vw,14px);line-height:1.6}
+ .journey-status{left:6%;right:6%;bottom:6%;font-size:8px;letter-spacing:.4px}
+ .journey-status>div{gap:10px}.journey-progress{left:6%;right:6%;bottom:4%}
+ .journey-scroll{left:7%;bottom:13%;font-size:8px}
+ .journey-model .loader{left:50%;transform:translateX(-50%);width:80%;top:55%}
+ .closing .reserve{min-width:220px}.nav nav.open{z-index:20;background:#080a0ef5}
+}
+
+/* Demo reservation overlay */
+.reservation{padding:0;border:1px solid #454139;background:#050505;color:var(--white);width:96vw;max-width:1700px;height:94svh;max-height:100svh;overflow:auto}.reservation::backdrop{background:#000d;backdrop-filter:blur(7px)}.reservation-layout{display:grid;grid-template-columns:minmax(0,1fr) 420px;min-height:100%}.reservation-close{position:absolute;right:16px;top:8px;z-index:3;background:#111c;border:1px solid #ffffff26;width:36px;height:36px;font-size:25px;line-height:1}.reservation-gallery{position:sticky;top:0;height:92svh;min-height:480px;background:#050505;display:flex;align-items:center;overflow:hidden}.reservation-gallery>img{width:100%;height:100%;object-fit:contain}.reservation-carousel{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;gap:12px;align-items:center}.reservation-carousel>button{width:40px;height:40px;border:1px solid #333;background:#161616b8;font-size:28px;line-height:1}#reserveDots{display:flex;gap:9px;background:#161616b8;padding:15px}#reserveDots button{border:0;border-radius:50%;width:10px;height:10px;padding:0;background:#666}#reserveDots button[aria-current=true]{background:#f5f3ec}.reservation-panel{padding:64px 26px 32px;background:#050505}.reservation-panel h2{font-size:36px;text-align:center;letter-spacing:3px;margin-bottom:20px}.reservation-demo{font-size:9px;letter-spacing:1.1px;text-align:center;color:#c4b38c;margin-bottom:28px}.variant{display:block;width:100%;text-align:left;background:#181818;border:1px solid transparent;padding:22px;margin-bottom:10px}.variant.selected{border-color:#bfae83;background:linear-gradient(135deg,#20201d,#161616)}.variant>span{display:flex;justify-content:space-between;align-items:center;gap:15px}.variant strong{font-size:21px;font-weight:400}.variant small{font-size:12px;color:#c4ad7d}.variant p{font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#aaa;margin-top:13px}.variant:disabled{opacity:.5;cursor:not-allowed}.augment-label{font-size:12px;color:#aaa;margin:24px 0 10px}.reservation-summary{padding:24px 0}.reservation-summary>div{display:flex;justify-content:space-between;gap:20px}.reservation-summary strong{font-size:19px;font-weight:500}.reservation-summary>p{font-size:11px;color:#ccc}.reservation-balance{font-size:12px;margin-top:20px}.reservation-note{font-size:11px;line-height:1.7;color:#aaa;margin-bottom:20px}.reservation-pay{width:100%;font-size:11px!important;min-width:0!important}.reservation-confirmation{margin-top:20px;padding:16px;border:1px solid #8c7951;background:#201e18;font-size:13px}.reservation [hidden]{display:none!important}
+@media(max-width:800px){.reservation{width:100vw;height:100svh;max-height:100svh;border:0}.reservation-layout{grid-template-columns:1fr}.reservation-gallery{position:relative;height:35svh;min-height:220px}.reservation-panel{padding:24px 22px 40px}.reservation-panel h2{font-size:32px}.reservation-carousel{bottom:8px}.reservation-close{position:fixed}.variant{padding:18px}.reservation-demo{margin-bottom:20px}}
+
+.reservation-close{position:fixed;right:calc(2vw + 18px);top:calc(3svh + 10px)}@media(max-width:800px){.reservation-close{right:14px;top:12px}}
+
+footer .demo-credits{text-align:center;color:#cdbb94;font:11px/1.8 Arial,sans-serif}footer .demo-credits .maker-credit,footer .demo-credits .concept{color:inherit;font:inherit;letter-spacing:0;margin:0}footer .demo-credits .concept{margin-top:8px}footer{flex-direction:column;gap:18px;padding-top:60px}

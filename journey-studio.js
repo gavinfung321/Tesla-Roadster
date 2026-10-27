@@ -1,8 +1,13 @@
+import {MeshoptDecoder} from './vendor/meshoptimizer/meshopt_decoder.mjs';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RGBELoader} from 'three/addons/loaders/RGBELoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
+const loadCheck=new URLSearchParams(location.search).has('loadcheck');
+const loadTimes={moduleStarted:performance.now()};let firstCarFrame=false;
+const compactScreen=matchMedia('(max-width: 800px)').matches;
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const diagnosticMeshes=[];let manual=false,scrollBlend=0,carCentreZ=0,baseY=0;
 const journey=document.querySelector(".journey"),heroCopy=document.querySelector(".journey-hero"),pilotCopy=document.querySelector(".journey-pilot");
 const clamp=x=>Math.max(0,Math.min(1,x)),mix=(a,b,t)=>a+(b-a)*t,smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
@@ -11,9 +16,13 @@ host.setAttribute('aria-busy','true');
 const slowLoad=setTimeout(()=>{if(!notice.hidden)notice.textContent='Loading the 3D car - this may take a moment on slower connections.'},12000);
 const motion=new THREE.Group();
 const scene=new THREE.Scene();scene.add(motion);scene.background=new THREE.Color(0x030405);scene.fog=new THREE.FogExp2(0x030405,.035);
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.85;renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,compactScreen?1.25:1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.85;renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
 const camera=new THREE.PerspectiveCamera(32,1,.1,80);camera.position.set(10.3,2.8,0);
-const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;controls.addEventListener("start",()=>manual=true);controls.enablePan=false;controls.enableZoom=false;controls.minPolarAngle=.8;controls.maxPolarAngle=1.5;
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;controls.addEventListener("start",()=>manual=true);controls.enablePan=false;
+const rotateButton=document.createElement('button');rotateButton.id='rotateCar';rotateButton.textContent='Rotate car';rotateButton.setAttribute('aria-pressed','false');document.querySelector('.journey-status>div').prepend(rotateButton);
+let touchRotate=false;
+function syncTouchMode(){const small=innerWidth<=800;controls.enabled=!small||touchRotate;renderer.domElement.style.touchAction=small&&!touchRotate?'pan-y':'none';rotateButton.hidden=!small;rotateButton.textContent=touchRotate?'Done rotating':'Rotate car';rotateButton.setAttribute('aria-pressed',String(touchRotate));document.querySelector('#dragHint').hidden=small;}
+rotateButton.onclick=()=>{touchRotate=!touchRotate;syncTouchMode();};addEventListener('resize',syncTouchMode);syncTouchMode();controls.enableZoom=false;controls.minPolarAngle=.8;controls.maxPolarAngle=1.5;
 function resize(){const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.setViewOffset(w,h,w<800?0:-w*.21,w<800?-h*.13:0,w,h);camera.updateProjectionMatrix()}addEventListener('resize',resize);resize();
 // The same physical floor receives both the spotlight and the model's shadows.
 const cn=document.createElement('canvas');cn.width=cn.height=256;const ctx=cn.getContext('2d'),pixels=ctx.createImageData(256,256);let seed=42;for(let i=0;i<pixels.data.length;i+=4){seed=(seed*1664525+1013904223)>>>0;const c=105+(seed%18);pixels.data.set([c,c,c,255],i)}ctx.putImageData(pixels,0,0);const texture=new THREE.CanvasTexture(cn);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(20,20);texture.colorSpace=THREE.SRGBColorSpace;
@@ -27,20 +36,26 @@ ceiling.material.onBeforeCompile=shader=>{
 };
 ceiling.rotation.x=Math.PI/2;ceiling.receiveShadow=true;ceiling.visible=false;scene.add(ceiling);
 const ceilingBeam=new THREE.SpotLight(0xfff1d7,0,30,.72,.8,2);
-ceilingBeam.position.set(3,1,6);ceilingBeam.castShadow=true;ceilingBeam.shadow.mapSize.set(1024,1024);ceilingBeam.shadow.radius=5;ceilingBeam.shadow.blurSamples=12;ceilingBeam.shadow.bias=-.0001;ceilingBeam.shadow.normalBias=.012;scene.add(ceilingBeam,ceilingBeam.target);
+ceilingBeam.position.set(3,1,6);ceilingBeam.castShadow=true;ceilingBeam.shadow.mapSize.set(compactScreen?512:1024,compactScreen?512:1024);ceilingBeam.shadow.radius=5;ceilingBeam.shadow.blurSamples=compactScreen?4:12;ceilingBeam.shadow.bias=-.0001;ceilingBeam.shadow.normalBias=.012;scene.add(ceilingBeam,ceilingBeam.target);
 
 scene.add(new THREE.HemisphereLight(0xb9c9df,0x090909,.07));
-const beam=new THREE.SpotLight(0xfff5e3,950);beam.position.set(7,5,5);beam.target.position.set(-1,0,0);beam.angle=.33;beam.penumbra=.38;beam.decay=2;beam.distance=25;beam.castShadow=true;beam.shadow.mapSize.set(1024,1024);beam.shadow.radius=5;beam.shadow.blurSamples=16;beam.shadow.bias=-.00015;beam.shadow.normalBias=.025;beam.shadow.camera.near=.5;beam.shadow.camera.far=25;beam.shadow.focus=1;scene.add(beam,beam.target);
+const beam=new THREE.SpotLight(0xfff5e3,950);beam.position.set(7,5,5);beam.target.position.set(-1,0,0);beam.angle=.33;beam.penumbra=.38;beam.decay=2;beam.distance=25;beam.castShadow=true;beam.shadow.mapSize.set(compactScreen?512:1024,compactScreen?512:1024);beam.shadow.radius=5;beam.shadow.blurSamples=16;beam.shadow.bias=-.00015;beam.shadow.normalBias=.025;beam.shadow.camera.near=.5;beam.shadow.camera.far=25;beam.shadow.focus=1;scene.add(beam,beam.target);
 const key=new THREE.SpotLight(0xe9edf5,120);key.position.set(5,5,4);key.target.position.set(0,.7,0);key.angle=.52;key.penumbra=.9;key.decay=2;scene.add(key,key.target);
 const rim=new THREE.DirectionalLight(0xbacbe0,2.3);rim.position.set(-3,3,-5);rim.layers.set(1);key.layers.set(1);camera.layers.enable(1);scene.add(rim);
 camera.layers.enable(2);
 // Broad studio softboxes shape the silver reflections without lighting the floor.
 RectAreaLightUniformsLib.init();
-const paintSoftbox=new THREE.RectAreaLight(0xf5f5f2,5,7,2.5);
+const paintSoftbox=new THREE.RectAreaLight(0xf5f5f2,2.8,7,2.5);
 paintSoftbox.position.set(.5,4.2,4.8);paintSoftbox.lookAt(0,1,0);paintSoftbox.layers.set(1);scene.add(paintSoftbox);
-const paintEdgebox=new THREE.RectAreaLight(0xdce5f2,3,6,1.3);
+const paintEdgebox=new THREE.RectAreaLight(0xdce5f2,2.2,6,1.3);
 paintEdgebox.position.set(-2,3,-4.5);paintEdgebox.lookAt(0,1,0);paintEdgebox.layers.set(1);scene.add(paintEdgebox);
 
+// Low, soft fill reveals trim without flattening the upper body highlights.
+const lowerFill=new THREE.DirectionalLight(0xd4dce5,.38);lowerFill.position.set(3,1.2,5);lowerFill.layers.set(1);scene.add(lowerFill);
+// Wheel-only softbox gives the alloy a shaped highlight, independent of body exposure.
+camera.layers.enable(3);
+const wheelSoftbox=new THREE.RectAreaLight(0xf0e8d9,3.5,5,1.8);wheelSoftbox.position.set(1,2.1,5);wheelSoftbox.lookAt(0,.5,0);wheelSoftbox.layers.set(3);scene.add(wheelSoftbox);
+const wheelBackbox=new THREE.RectAreaLight(0xdce6f2,2.8,5,1.8);wheelBackbox.position.set(-1,2.1,-5);wheelBackbox.lookAt(0,.5,0);wheelBackbox.layers.set(3);scene.add(wheelBackbox);
 const tyreFills=[];for(const sign of [-1,1]){const light=new THREE.DirectionalLight(0xc4ceda,.55);light.position.set(5,2,sign*5);light.layers.set(2);scene.add(light);tyreFills.push(light)}
 
 // Turbulent cloud variants with irregular transparent margins and internal self-shadow.
@@ -64,7 +79,7 @@ function cloudTexture(variant){
 }
 const smokeTextures=[0,1,2,3].map(cloudTexture),smokeTexture=smokeTextures[0];
 const smokePuffs=[];
-for(let i=0;i<84;i++){
+for(let i=0;i<(compactScreen?40:84);i++){
  const material=new THREE.SpriteMaterial({map:smokeTextures[i%4],color:i%3===0?0x9ba4af:0xe0e3e7,transparent:true,opacity:0,depthWrite:false,rotation:i*2.39996});
  const puff=new THREE.Sprite(material);puff.visible=false;scene.add(puff);smokePuffs.push(puff);
 }
@@ -75,7 +90,10 @@ const landingPlumes=[-1,1].map(side=>{
 });
 const pmrem=new THREE.PMREMGenerator(renderer);let environment;
 new RGBELoader().load('assets/roadster-studio-v2.hdr',hdr=>{environment=pmrem.fromEquirectangular(hdr).texture;scene.environment=environment;scene.environmentIntensity=.22;hdr.dispose();pmrem.dispose()});
-new GLTFLoader().load('assets/roadster.glb',gltf=>{
+const modelURL='assets/roadster-web.glb'+(loadCheck?'?loadcheck='+Date.now():'');
+loadTimes.requestStarted=performance.now();
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(modelURL,gltf=>{
+ loadTimes.modelDecoded=performance.now();
  const car=gltf.scene;
 
 // Three bounded passes relax roof-shoulder ridges without remeshing or changing UVs.
@@ -83,7 +101,7 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
  car.traverse(mesh=>{
   if(!mesh.isMesh||!/Meshy.body/i.test(mesh.name))return;
   const geo=mesh.geometry;if(!geo.attributes.normal)return;
-  for(let pass=0;pass<3;pass++){
+  for(let pass=0;pass<(compactScreen?1:3);pass++){
   const pos=geo.attributes.position,norm=geo.attributes.normal;
   const cell=.035,buckets=new Map(),selected=[];
   for(let i=0;i<pos.count;i++){
@@ -152,7 +170,7 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
 
  `);
  shader.fragmentShader=shader.fragmentShader.replace('#include <lights_physical_fragment>','#include <lights_physical_fragment>\nmaterial.clearcoat *= mix(.08,.9,paintMask);\nmaterial.clearcoat = mix(material.clearcoat,.85,surfaceGlass);\nmaterial.clearcoatRoughness = mix(material.clearcoatRoughness,.12,surfaceGlass);');
- shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n// Distinct finishes on existing colour regions, without moving their boundaries.\nfloat paintMask=step(.13,max(diffuseColor.r,max(diffuseColor.g,diffuseColor.b)));\nfloat surfaceGlass=(1.0-paintMask)*smoothstep(.035,.075,repairPosition.y)*(1.0-smoothstep(.73,.80,repairPosition.x));\nroughnessFactor=mix(.54,.26,paintMask);\nroughnessFactor=mix(roughnessFactor,.16,surfaceGlass);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor=mix(.08,.65,paintMask);\nmetalnessFactor=mix(metalnessFactor,0.0,surfaceGlass);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};return paint}const copy=m.clone();copy.normalMap=null;if(/skirt|liner|undertray|shield/i.test(o.name)){copy.color.set(0x15191f);copy.roughness=.56;copy.metalness=.08;copy.envMapIntensity=.8;}if(/alloy|wheel face|spokes|hub/i.test(o.name)){copy.roughness=/spokes|hub/i.test(o.name)?.36:.30;copy.metalness=.65;copy.envMapIntensity=1.8;}if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
+ shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n// Distinct finishes on existing colour regions, without moving their boundaries.\nfloat paintMask=step(.13,max(diffuseColor.r,max(diffuseColor.g,diffuseColor.b)));\nfloat surfaceGlass=(1.0-paintMask)*smoothstep(.035,.075,repairPosition.y)*(1.0-smoothstep(.73,.80,repairPosition.x));\nroughnessFactor=mix(.54,.26,paintMask);\nroughnessFactor=mix(roughnessFactor,.16,surfaceGlass);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor=mix(.08,.65,paintMask);\nmetalnessFactor=mix(metalnessFactor,0.0,surfaceGlass);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat tailMask=smoothstep(0.045,0.16,diffuseColor.r-max(diffuseColor.g,diffuseColor.b))*smoothstep(0.06,0.18,diffuseColor.r);\ntotalEmissiveRadiance += vec3(1.0,0.012,0.002)*tailMask*1.5;')};return paint}const copy=m.clone();copy.normalMap=null;if(/skirt|liner|undertray|shield/i.test(o.name)){copy.color.set(0x15191f);copy.roughness=.56;copy.metalness=.08;copy.envMapIntensity=.8;}if(/alloy|wheel[_ ]face|spokes|hub/i.test(o.name)){o.layers.enable(3);const dark=/spokes|hub/i.test(o.name);copy.color.set(dark?0x343b43:/wheel[_ ]face/i.test(o.name)?0x929ca6:0xbdc5cd);copy.roughness=dark?.32:.27;copy.metalness=dark?.72:.82;copy.envMapIntensity=2.1;}if(/tyre/i.test(o.name)){copy.color.set(0x30343a);copy.emissive.set(0x070809);copy.emissiveIntensity=.25;copy.roughness=1;copy.metalness=0;copy.envMapIntensity=0;copy.map=null;copy.side=THREE.DoubleSide;}return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
  wrapper.updateMatrixWorld(true);let tyreMin=Infinity;wrapper.traverse(o=>{if(o.isMesh&&/tyre/i.test(o.name))tyreMin=Math.min(tyreMin,new THREE.Box3().setFromObject(o).min.y)});if(Number.isFinite(tyreMin))wrapper.position.y-=tyreMin-.012;
  // A recessed underbody insert masks the noisy generated machinery below the rear outlets.
  const rearInsert=new THREE.Mesh(new THREE.BoxGeometry(.12,.095,.59),new THREE.MeshStandardMaterial({color:0x11151a,roughness:.86,metalness:.08}));
@@ -188,14 +206,15 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
  }
  rearRibbon(.023,0,new THREE.MeshStandardMaterial({color:0x090b0e,roughness:.45,metalness:.15,side:THREE.DoubleSide}),'Smooth rear lamp housing');
  rearRibbon(.0065,.0015,new THREE.MeshBasicMaterial({color:0xff2915,side:THREE.DoubleSide,toneMapped:false}),'Continuous red rear lens');
- baseY=wrapper.position.y;wrapper.position.y=0;motion.position.y=baseY;motion.add(wrapper);notice.hidden=true;clearTimeout(slowLoad);host.setAttribute('aria-busy','false');
+ baseY=wrapper.position.y;wrapper.position.y=0;motion.position.y=baseY;motion.add(wrapper);loadTimes.materialsReady=performance.now();notice.hidden=true;clearTimeout(slowLoad);host.setAttribute('aria-busy','false');
  // Headlights sit at the nose and throw their light forward, away from the rear camera.
  const frontX=(bounds.min.x-center.x)*scale-.035,frontY=baseY+(.36-center.y)*scale;
  const lampY=Math.max(.38,Math.min(.65,frontY));
  for(const side of [-1,1]){
   const z=carCentreZ+side*.69;
   const head=new THREE.SpotLight(0xffedc4,420,14,.32,.85,1.8);head.position.set(frontX,lampY-baseY,z);head.target.position.set(frontX-6,.015-baseY,z+side*.22);motion.add(head,head.target);
-  const lens=new THREE.Mesh(new THREE.PlaneGeometry(.21,.018),new THREE.MeshBasicMaterial({color:0xfff2d6,side:THREE.FrontSide,toneMapped:false}));lens.rotation.y=-Math.PI/2;lens.position.set(frontX,lampY-baseY,z);motion.add(lens);
+  // No separate lens plane: a flat strip at the front bounding box floats beyond the sloped body.
+  // Keep illumination on the ground; the car's existing lamp surfaces supply the visible shape.
  }
  // Emission follows the existing red lens texture, avoiding a false central lamp.
 
@@ -203,13 +222,15 @@ new GLTFLoader().load('assets/roadster.glb',gltf=>{
 
 
 
-},event=>{if(event.total){notice.textContent='Loading 3D car: '+Math.round(event.loaded/event.total*100)+'%';}},e=>{clearTimeout(slowLoad);host.setAttribute('aria-busy','false');notice.textContent='The 3D car could not load. ';const retry=document.createElement('button');retry.textContent='Try again';retry.onclick=()=>location.reload();notice.appendChild(retry);console.error(e)});
-let visible=true;document.addEventListener('visibilitychange',()=>visible=!document.hidden);renderer.setAnimationLoop(()=>{if(!visible)return;updateJourney();controls.update();renderer.render(scene,camera)});
+},event=>{if(event.total){const percent=Math.round(event.loaded/event.total*100);notice.textContent=percent>=100?'Preparing materials and lighting...':'Loading 3D car: '+percent+'%';}},e=>{clearTimeout(slowLoad);host.setAttribute('aria-busy','false');notice.textContent='The 3D car could not load. ';const retry=document.createElement('button');retry.textContent='Try again';retry.onclick=()=>location.reload();notice.appendChild(retry);console.error(e)});
+let visible=!document.hidden,lastFrame=0,frameDelta=1/60;
+document.addEventListener('visibilitychange',()=>{visible=!document.hidden;lastFrame=0});
+renderer.setAnimationLoop(now=>{const elapsed=lastFrame?now-lastFrame:33.34;if(compactScreen&&elapsed<32)return;lastFrame=now;frameDelta=Math.min(elapsed/1000,.05);if(!visible)return;const rect=journey.getBoundingClientRect();if(rect.bottom<0||rect.top>innerHeight)return;updateJourney();controls.update();renderer.render(scene,camera);if(!firstCarFrame&&loadTimes.materialsReady&&environment){firstCarFrame=true;requestAnimationFrame(()=>{const resource=performance.getEntriesByType('resource').find(r=>r.name.includes(modelURL));const report={device:compactScreen?'mobile layout':'desktop layout',navigationToCarMs:Math.round(performance.now()),modelTransferMs:resource?Math.round(resource.responseEnd-resource.startTime):null,modelDecodeMs:resource?Math.round(loadTimes.modelDecoded-resource.responseEnd):null,materialSetupMs:Math.round(loadTimes.materialsReady-loadTimes.modelDecoded),modelBytes:resource?.decodedBodySize||null,modelURL};const output=document.createElement('output');output.id='loadMetrics';output.hidden=true;output.textContent=JSON.stringify(report);document.body.append(output);if(loadCheck){const panel=document.createElement('div');panel.id='phoneLoadReport';panel.style.cssText='position:fixed;left:12px;bottom:55px;z-index:50;max-width:calc(100vw - 24px);padding:10px 14px;background:#111e;color:#eee;border:1px solid #bca778;font:12px/1.5 Arial,sans-serif;pointer-events:none';panel.textContent='Car ready: '+(report.navigationToCarMs/1000).toFixed(1)+'s | Model: '+(report.modelBytes/1000000).toFixed(1)+' MB';document.body.append(panel)}})}});
 
 
 function updateJourney(){
  const travel=Math.max(0,(scrollY-journey.offsetTop)/innerHeight),progress=clamp(travel/5.9),first=clamp(travel/1.45),t=smooth((first-.1)/.78),mobile=innerWidth<800;
- scrollBlend=mix(scrollBlend,travel,.09);
+ scrollBlend=reduceMotion?travel:mix(scrollBlend,travel,1-Math.exp(-6*frameDelta));
  const u=smooth((clamp(scrollBlend/1.45)-.1)/.78),flip=smooth((scrollBlend-1.65)/1.65),roll=smooth((flip-.1)/.8);
  const landing=smooth((scrollBlend-3.8)/1.8),unroll=smooth(landing/.65),descent=smooth((landing-.3)/.7);
  motion.rotation.x=(roll+unroll)*Math.PI;
@@ -224,7 +245,7 @@ function updateJourney(){
  ceiling.material.emissive.setRGB(.013*overhead,.014*overhead,.016*overhead);
  ceilingBeam.position.set(3,ceilingY-1.85,5.5);ceilingBeam.target.position.set(-1,ceilingY,0);
  ceilingBeam.intensity=1800*overhead;
- const smokeReveal=smooth((landing-.38)/.35),clock=performance.now()*.00015;
+ const smokeReveal=smooth((landing-.38)/.35),clock=reduceMotion?0:performance.now()*.00015;
  landingPlumes.forEach(({plume,side})=>{
   const gap=Math.max(.08,motion.position.y-baseY);
   plume.visible=landing>.45;
@@ -233,7 +254,7 @@ function updateJourney(){
   plume.material.opacity=smokeReveal*(.65+.3*(1-descent));
  });
  smokePuffs.forEach((puff,i)=>{
-  const side=i%2?1:-1,k=Math.floor(i/2)/41,phase=i*2.39996;
+  const side=i%2?1:-1,k=Math.floor(i/2)/(smokePuffs.length/2-1),phase=i*2.39996;
   const age=(k+clock*(.08+(i%5)*.008))%1;
   const envelope=smooth(age/.1)*(1-smooth((age-.78)/.22));
   puff.visible=smokeReveal>.001;
@@ -247,13 +268,13 @@ function updateJourney(){
  });
 
 
- tyreFills.forEach(light=>light.intensity=mix(.3,.9,flip));
+ tyreFills.forEach(light=>light.intensity=mix(.65,1.1,flip));
  controls.enableDamping=manual;controls.maxPolarAngle=mix(1.5,2.3,overhead);
- if(!manual){const angle=mix(-u*Math.PI/2,0,flip),distance=mix(mix(10.3,9.5,u),10.8,flip);camera.position.set(Math.cos(angle)*distance,mix(mix(mix(2.8,2.05,u),ceilingY-.75,flip),2.2,landing),carCentreZ+Math.sin(angle)*distance);controls.target.set(0,mix(mix(mix(1,.8,u),ceilingY-.5,flip),1.5,landing),carCentreZ)}
- const w=host.clientWidth,h=host.clientHeight;camera.setViewOffset(w,h,mobile?0:mix(-w*.21,0,u),mobile?-h*.1:mix(mix(0,-h*.04,u),0,flip),w,h);camera.updateProjectionMatrix();
+ if(!manual){const angle=mix(-u*Math.PI/2,0,flip),distance=mix(mix(10.3,9.5,u),10.8,flip)*(mobile?mix(mix(1.12,1.85,u),1.12,flip):1);camera.position.set(Math.cos(angle)*distance,mix(mix(mix(2.8,2.05,u),ceilingY-.75,flip),2.2,landing),carCentreZ+Math.sin(angle)*distance);controls.target.set(0,mix(mix(mix(1,.8,u),ceilingY-.5,flip),1.5,landing),carCentreZ)}
+ const w=host.clientWidth,h=host.clientHeight;camera.setViewOffset(w,h,mobile?0:mix(-w*.21,0,u),mobile?-h*.16:mix(mix(0,-h*.04,u),0,flip),w,h);camera.updateProjectionMatrix();
  beam.position.set(mix(mix(7,2,u),-1,flip),5,mix(mix(5,7,u),7,flip));beam.position.y=5;beam.target.position.set(mix(-1,0,u),0,0);beam.angle=mix(mix(.33,.48,u),.6,flip);beam.intensity=mix(950,1100,u)*((1-smooth((flip-.48)/.52))+landingFloor*.8);
  if(landing>0){beam.position.set(mix(2,5,landing),5,mix(7,4,landing));beam.target.position.set(1,0,0);beam.angle=mix(.6,.55,landing)}
- key.position.set(mix(5,1,u),mix(5,3.1,overhead),mix(4,5,u));key.intensity=mix(120,165,overhead);rim.intensity=mix(mix(2.3,1.8,u),2.2,overhead);
+ key.position.set(mix(5,1,u),mix(5,3.1,overhead),mix(4,5,u));key.intensity=mix(88,125,overhead);rim.intensity=mix(mix(1.8,1.45,u),1.8,overhead);
  heroCopy.style.opacity=1-smooth((first-.04)/.27);heroCopy.style.pointerEvents=first<.25?'auto':'none';heroCopy.setAttribute('aria-hidden',String(first>=.25));heroCopy.querySelectorAll('a').forEach(a=>a.tabIndex=first>=.25?-1:0);
  const reveal=smooth((first-.34)/.24)*(1-smooth((travel-1.6)/.4));pilotCopy.style.opacity=reveal;pilotCopy.style.transform=`translateY(${24*(1-reveal)}px)`;pilotCopy.setAttribute('aria-hidden',String(reveal<.05));
  const physicsCopy=document.querySelector('.journey-physics'),physicsReveal=smooth((travel-2)/.55)*(1-smooth((travel-3.8)/.5));physicsCopy.style.opacity=physicsReveal;physicsCopy.setAttribute('aria-hidden',String(physicsReveal<.05));
@@ -267,4 +288,4 @@ addEventListener('scroll',()=>{manual=false},{passive:true});document.querySelec
 
 
 
-addEventListener('journey:navigate',()=>{manual=false;scrollBlend=Math.max(0,(scrollY-journey.offsetTop)/innerHeight)});
+addEventListener('journey:navigate',()=>{manual=false;touchRotate=false;syncTouchMode();scrollBlend=Math.max(0,(scrollY-journey.offsetTop)/innerHeight)});

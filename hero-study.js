@@ -1,3 +1,4 @@
+import {MeshoptDecoder} from './vendor/meshoptimizer/meshopt_decoder.mjs';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RGBELoader} from 'three/addons/loaders/RGBELoader.js';
@@ -18,7 +19,7 @@ const key=new THREE.SpotLight(0xe9edf5,120);key.position.set(5,5,4);key.target.p
 const rim=new THREE.DirectionalLight(0xbacbe0,2.3);rim.position.set(-3,3,-5);rim.layers.set(1);key.layers.set(1);camera.layers.enable(1);scene.add(rim);
 const pmrem=new THREE.PMREMGenerator(renderer);let environment;
 new RGBELoader().load('assets/roadster-studio-v2.hdr',hdr=>{environment=pmrem.fromEquirectangular(hdr).texture;scene.environment=environment;scene.environmentIntensity=.22;hdr.dispose();pmrem.dispose()});
-new GLTFLoader().load('assets/roadster.glb',gltf=>{
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load('assets/roadster-web.glb',gltf=>{
  const car=gltf.scene;const bounds=new THREE.Box3().setFromObject(car),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());car.position.sub(center);const wrapper=new THREE.Group();wrapper.add(car);const scale=4.6/Math.max(size.x,size.z);wrapper.scale.setScalar(scale);wrapper.position.y=size.y*scale/2+.015;
  car.traverse(o=>{if(!o.isMesh)return;o.layers.enable(1);o.castShadow=true;o.receiveShadow=true;const tune=m=>{if(m.map){const paint=new THREE.MeshPhysicalMaterial({map:m.map,color:0xc9cdd1,roughness:.3,metalness:.55,clearcoat:.65,clearcoatRoughness:.17,side:m.side});paint.normalMap=null;paint.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nfloat paintMask = smoothstep(0.14, 0.5, dot(diffuseColor.rgb, vec3(0.2126,0.7152,0.0722)));\nroughnessFactor = mix(0.19, 0.32, paintMask);').replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor = mix(0.05, 0.62, paintMask);')};return paint}const copy=m.clone();copy.normalMap=null;return copy};o.material=Array.isArray(o.material)?o.material.map(tune):tune(o.material)});// Ground the tyres, rather than an AI-generated underbody protrusion.
  wrapper.updateMatrixWorld(true);let tyreMin=Infinity;wrapper.traverse(o=>{if(o.isMesh&&/tyre/i.test(o.name))tyreMin=Math.min(tyreMin,new THREE.Box3().setFromObject(o).min.y)});if(Number.isFinite(tyreMin))wrapper.position.y-=tyreMin-.012;

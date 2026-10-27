@@ -24,3 +24,19 @@ document.addEventListener('click',event=>{
 addEventListener('hashchange',()=>navigateSection(location.hash||'#home'));
 addEventListener('popstate',()=>navigateSection(location.hash||'#home'));
 addEventListener('load',()=>navigateSection(location.hash||'#home'),{once:true});
+
+// Reservation is a self-contained demo: no network submission or payment data.
+const reserveDialog=document.querySelector('#reserveDialog');
+let reserveTrigger,previousOverflow='',selectedVariant='Performance',reservePhoto=0;
+const reservePhotos=[['final.webp','Roadster front three-quarter view'],['profile.webp','Roadster side profile'],['hero.webp','Roadster rear view'],['gallery-4.avif','Roadster interior']];
+const photoDots=document.querySelector('#reserveDots');
+reservePhotos.forEach((photo,i)=>{const button=document.createElement('button');button.type='button';button.setAttribute('aria-label',`View photo ${i+1}: ${photo[1]}`);button.onclick=()=>showReservePhoto(i);photoDots.append(button)});
+function showReservePhoto(i){reservePhoto=(i+reservePhotos.length)%reservePhotos.length;const photo=reservePhotos[reservePhoto],image=document.querySelector('#reserveImage');image.src=`assets/${photo[0]}`;image.alt=photo[1];[...photoDots.children].forEach((b,index)=>{if(index===reservePhoto)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')})}
+showReservePhoto(0);
+document.querySelector('#reservePrev').onclick=()=>showReservePhoto(reservePhoto-1);
+document.querySelector('#reserveNext').onclick=()=>showReservePhoto(reservePhoto+1);
+document.querySelectorAll('[data-reserve]').forEach(button=>button.onclick=()=>{reserveTrigger=button;previousOverflow=document.body.style.overflow;document.body.style.overflow='hidden';document.querySelector('#reserveConfirmation').hidden=true;reserveDialog.showModal()});
+document.querySelector('.reservation-close').onclick=()=>reserveDialog.close();
+reserveDialog.addEventListener('close',()=>{document.body.style.overflow=previousOverflow;reserveTrigger?.focus({preventScroll:true})});
+document.querySelectorAll('[data-variant]').forEach(button=>button.onclick=()=>{selectedVariant=button.dataset.variant;document.querySelectorAll('[data-variant]').forEach(b=>{const selected=b===button;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected))});document.querySelector('#reserveBalance').textContent=selectedVariant==='Thrust'?'$245,000':'$45,000';document.querySelector('#thrustNotice').hidden=selectedVariant!=='Thrust';document.querySelector('#reserveConfirmation').hidden=true});
+document.querySelector('#demoReserve').onclick=()=>{const confirmation=document.querySelector('#reserveConfirmation');confirmation.hidden=false;confirmation.textContent=`Demo complete: ${selectedVariant} selected. No payment was taken and no actual reservation was created.`;confirmation.scrollIntoView({block:'nearest',behavior:'smooth'})};
